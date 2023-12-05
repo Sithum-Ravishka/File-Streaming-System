@@ -6,11 +6,12 @@ import (
 	"fmt"
 )
 
+const (
+	chunkSize = int64(102400)
+	inputFile = "data.jpg"
+)
+
 func main() {
-	// Set the input file name
-	inputFile := "data.jpg"
-	// Set the desired chunk size in bytes
-	chunkSize := int64(102400)
 
 	// Split the input file into chunks
 	chunkNames, err := fileSplit.SplitFile(inputFile, chunkSize)
