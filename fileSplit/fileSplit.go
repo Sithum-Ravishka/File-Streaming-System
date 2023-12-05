@@ -47,10 +47,14 @@ func SplitAndHashFile(inputFile string, chunkSize int64) ([]string, []string, er
 		chunkFile.Close()
 
 		// Add the name of the created chunk file to the slice
-		chunkNames = append(chunkNames, chunkName)
-
-		// Add the hash value of the chunk to the slice
 		hashValue := fmt.Sprintf("%x", hasher.Sum(nil))
+		newChunkName := fmt.Sprintf("%s", hashValue)
+		err = os.Rename(chunkName, newChunkName)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		chunkNames = append(chunkNames, newChunkName)
 		hashValues = append(hashValues, hashValue)
 
 		// Reset the hash for the next iteration
