@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	chunkSize = int64(102400)
+	chunkSize = int64(502400)
 	inputFile = "data.jpg"
 )
 
