@@ -1,33 +1,46 @@
 package fileRetrieve
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"io"
 	"os"
 )
 
-// RetrieveChunks retrieves and concatenates chunks to reconstruct the original file
-func RetrieveChunks(chunkNames []string, outputFileName string) error {
-	// Open the output file for writing
+// RetrieveChunksAndVerify retrieves and concatenates chunks to reconstruct the original file,
+// verifying the integrity of each chunk using the provided hash values.
+func RetrieveChunksAndVerify(chunkNames, hashValues []string, outputFileName string) error {
 	outputFile, err := os.Create(outputFileName)
 	if err != nil {
 		return err
 	}
-	defer outputFile.Close() // Defer closing the output file until the surrounding function returns
+	defer outputFile.Close()
 
-	// Iterate through each chunk name
-	for _, chunkName := range chunkNames {
-		// Open each chunk file for reading
+	hasher := sha256.New()
+
+	for i, chunkName := range chunkNames {
 		chunkFile, err := os.Open(chunkName)
 		if err != nil {
 			return err
 		}
-		defer chunkFile.Close() // Defer closing the chunk file until the surrounding function returns
+		defer chunkFile.Close()
 
-		// Copy the content of each chunk to the output file
-		_, err = io.Copy(outputFile, chunkFile)
+		// Create a multi-reader to both read from the file and calculate the hash
+		multiReader := io.TeeReader(chunkFile, hasher)
+
+		_, err = io.Copy(outputFile, multiReader)
 		if err != nil {
 			return err
 		}
+
+		// Verify the hash of the chunk
+		hashValue := fmt.Sprintf("%x", hasher.Sum(nil))
+		if hashValue != hashValues[i] {
+			return fmt.Errorf("hash verification failed for chunk %s", chunkName)
+		}
+
+		// Reset the hash for the next iteration
+		hasher.Reset()
 	}
 
 	return nil

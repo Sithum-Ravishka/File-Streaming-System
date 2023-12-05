@@ -1,83 +1,61 @@
 package fileSplit
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
 )
 
-// SplitFile splits a file into chunks of a specified size
-func SplitFile(inputFile string, chunkSize int64) ([]string, error) {
-
-	// Open the input file for reading
+// SplitAndHashFile splits a file into chunks, calculates the SHA256 hash for each chunk,
+// and returns the names of the created chunks along with their corresponding hash values.
+func SplitAndHashFile(inputFile string, chunkSize int64) ([]string, []string, error) {
 	file, err := os.Open(inputFile)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	defer file.Close() // Ensure the file is closed when the function exits
+	defer file.Close()
 
-	// Get information about the file, including its size
 	fileInfo, err := file.Stat()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	fileSize := fileInfo.Size() // Get the size of the file in bytes
+	fileSize := fileInfo.Size()
 
-	chunkNames := make([]string, 0) // Create a slice to store the names of the created chunks
+	chunkNames := make([]string, 0)
+	hashValues := make([]string, 0)
 
-	// Loop through the file in chunks and create new chunk files
+	hasher := sha256.New()
+
 	for i := int64(0); i < fileSize; i += chunkSize {
-		// Create a unique name for each chunk file based on the input file name and chunk index
 		chunkName := fmt.Sprintf("%s_chunk%d", inputFile, i/chunkSize+1)
-
-		// Create a new file for the chunk
 		chunkFile, err := os.Create(chunkName)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
+
+		// Create a multi-writer to both write to the file and calculate the hash
+		multiWriter := io.MultiWriter(chunkFile, hasher)
 
 		// Copy the specified chunkSize bytes from the original file to the chunk file
-		_, err = io.CopyN(chunkFile, file, chunkSize)
+		_, err = io.CopyN(multiWriter, file, chunkSize)
 		if err != nil && err != io.EOF {
-			return nil, err
+			return nil, nil, err
 		}
 
-		chunkFile.Close() // Close the chunk file
+		chunkFile.Close()
 
 		// Add the name of the created chunk file to the slice
 		chunkNames = append(chunkNames, chunkName)
+
+		// Add the hash value of the chunk to the slice
+		hashValue := fmt.Sprintf("%x", hasher.Sum(nil))
+		hashValues = append(hashValues, hashValue)
+
+		// Reset the hash for the next iteration
+		hasher.Reset()
 	}
 
-	// Return the names of all created chunk files
-	return chunkNames, nil
+	return chunkNames, hashValues, nil
 }
-
-// // Loop through the file in chunks and create new chunk files
-// for i := int64(0); i < fileSize; i += chunkSize {
-//     // Create a unique name for each chunk file based on the input file name and chunk index
-//     chunkName := fmt.Sprintf("%s_chunk%d", inputFile, i/chunkSize+1)
-
-//     // Create a new file for the chunk
-//     chunkFile, err := os.Create(chunkName)
-//     if err != nil {
-//         return nil, err
-//     }
-
-//     // Calculate the remaining bytes to read in the last iteration
-//     remainingBytes := chunkSize
-//     if fileSize-i < chunkSize {
-//         remainingBytes = fileSize - i
-//     }
-
-//     // Copy the specified chunkSize bytes from the original file to the chunk file
-//     _, err = io.CopyN(chunkFile, file, remainingBytes)
-//     if err != nil && err != io.EOF {
-//         return nil, err
-//     }
-
-//     chunkFile.Close() // Close the chunk file
-
-//     // Add the name of the created chunk file to the slice
-//     chunkNames = append(chunkNames, chunkName)
-// }
