@@ -109,7 +109,7 @@ func main() {
 	mt, _ := merkletree.NewMerkleTree(ctx, store, 32)
 
 	for index, value := range chunkNames {
-		mt.Add(ctx, big.NewInt(int64(index)), big.NewInt(0)) // You might need to adjust the second parameter based on your use case
+		mt.Add(ctx, big.NewInt(int64(index)), big.NewInt(0)) // Need to adjust the second parameter based on our use case need
 		fmt.Println(ctx, index, value)
 
 		// Proof of membership for each chunk
