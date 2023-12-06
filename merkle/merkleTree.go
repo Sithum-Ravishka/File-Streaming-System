@@ -12,8 +12,6 @@ import (
 // Sparse MT
 func main() {
 
-	
-
 	ctx := context.Background()
 
 	// Tree storage

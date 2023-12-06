@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math/big"
@@ -11,121 +13,128 @@ import (
 	"github.com/iden3/go-merkletree-sql/db/memory"
 )
 
-func SplitFile(inputFile string, chunkSize int64) ([]string, error) {
-	file, err := os.Open(inputFile)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
+func SplitFile(inputFile *os.File, chunkSize int64) ([]string, []string, error) {
+	defer inputFile.Close()
 
-	fileInfo, err := file.Stat()
+	fileInfo, err := inputFile.Stat()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	fileSize := fileInfo.Size()
+	var chunkNames []string
+	var hashValues []string
 
-	chunkNames := make([]string, 0)
+	hasher := sha256.New()
 
 	for i := int64(0); i < fileSize; i += chunkSize {
-		remaining := fileSize - i
-		toCopy := chunkSize
-		if remaining < chunkSize {
-			toCopy = remaining
-		}
-
-		chunkName := fmt.Sprintf("%s_chunk%d", inputFile, i/chunkSize+1)
-		chunkFile, err := os.Create(chunkName)
+		chunkFile, err := os.Create(fmt.Sprintf("%v_chunk%d", inputFile.Name(), i/chunkSize+1))
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
-		// Copy the specified toCopy bytes from the original file to the chunk file
-		_, err = io.CopyN(chunkFile, file, toCopy)
+		multiWriter := io.MultiWriter(chunkFile, hasher)
+
+		_, err = io.CopyN(multiWriter, inputFile, chunkSize)
 		if err != nil && err != io.EOF {
-			chunkFile.Close()
-			return nil, err
+			return nil, nil, err
 		}
 
 		chunkFile.Close()
-		chunkNames = append(chunkNames, chunkName)
+		chunkNames = append(chunkNames, chunkFile.Name())
+
+		hashValue := fmt.Sprintf("%x", hasher.Sum(nil))
+		hashValues = append(hashValues, hashValue)
+
+		hasher.Reset()
 	}
 
-	return chunkNames, nil
+	return chunkNames, hashValues, nil
 }
 
-// Sparse MT
-func main() {
+func RetrieveChunksAndVerify(chunkNames []string, hashValues []string, outputFileName string) error {
+	outputFile, err := os.Create(outputFileName)
+	if err != nil {
+		return err
+	}
+	defer outputFile.Close()
 
-	const (
-		chunkSize = int64(502400)
-		inputFile = "data.jpg"
-	)
-	chunkNames, err := SplitFile(inputFile, chunkSize)
+	hasher := sha256.New()
+
+	for i, chunkName := range chunkNames {
+		chunkFile, err := os.Open(chunkName)
+		if err != nil {
+			return err
+		}
+		defer chunkFile.Close()
+
+		// Create a multi-reader to both read from the file and calculate the hash
+		multiReader := io.TeeReader(chunkFile, hasher)
+
+		_, err = io.Copy(outputFile, multiReader)
+		if err != nil {
+			return err
+		}
+
+		// Verify the hash of the chunk
+		hashValue := fmt.Sprintf("%x", hasher.Sum(nil))
+		if hashValue != hashValues[i] {
+			return fmt.Errorf("hash verification failed for chunk %s", chunkName)
+		}
+
+		// Reset the hash for the next iteration
+		hasher.Reset()
+	}
+
+	return nil
+}
+
+func main() {
+	chunkSize := int64(500000)
+	inputFile, err := os.Open("data.jpg")
+	if err != nil {
+		fmt.Printf("Error: %v", err)
+		return
+	}
+	defer inputFile.Close()
+
+	chunkNames, hashValues, err := SplitFile(inputFile, chunkSize)
 	if err != nil {
 		fmt.Println("Error splitting and hashing file:", err)
 		return
 	}
 
 	ctx := context.Background()
-
-	// Tree storage
 	store := memory.NewMemoryStorage()
-
-	// Generate a new MerkleTree with 32 levels
 	mt, _ := merkletree.NewMerkleTree(ctx, store, 32)
 
-	for i, chunkName := range chunkNames {
-		index := big.NewInt(int64(i)) // Use the correct index based on your application
-		value, err := calculateHash(chunkName)
+	for index, value := range chunkNames {
+		mt.Add(ctx, big.NewInt(int64(index)), big.NewInt(0)) // You might need to adjust the second parameter based on your use case
+		fmt.Println(ctx, index, value)
+
+		// Proof of membership for each chunk
+		proofExist, _, _ := mt.GenerateProof(ctx, big.NewInt(int64(index)), mt.Root())
+		fmt.Printf("Proof of membership for chunk %d: %v\n", index, proofExist.Existence)
+
+		err := newFunction(proofExist, chunkNames, hashValues, "restored_data.jpg")
 		if err != nil {
-			fmt.Println("Error calculating hash for chunk:", err)
+			fmt.Println("Error retrieving and verifying chunks:", err)
 			return
 		}
-		mt.Add(ctx, index, value)
-
-		fmt.Println(mt)
 	}
 
-	// Proof of membership of a leaf with index 1
-	proofExist, value, _ := mt.GenerateProof(ctx, big.NewInt(1), mt.Root())
+	// Proof of non-membership for a non-existing chunk (e.g., index 100)
+	nonExistingIndex := big.NewInt(100)
+	proofNotExist, _, _ := mt.GenerateProof(ctx, nonExistingIndex, mt.Root())
+	fmt.Printf("Proof of non-membership for chunk %d: %v\n", nonExistingIndex.Int64(), proofNotExist.Existence)
 
-	fmt.Println("Proof of membership:", proofExist.Existence)
-	fmt.Println("Value corresponding to the queried index:", value)
-
-	// Proof of non-membership of a leaf with index 4
-	proofNotExist, _, _ := mt.GenerateProof(ctx, big.NewInt(10), mt.Root())
-
-	fmt.Println("Proof of membership:", proofNotExist.Existence)
+	claimToMarshal, _ := json.Marshal(mt.Root())
+	fmt.Println(string(claimToMarshal))
 }
 
-func calculateHash(chunkName string) (*big.Int, error) {
-	file, err := os.Open(chunkName)
-	if err != nil {
-		return nil, err
+func newFunction(proofExist *merkletree.Proof, chunkNames []string, hashValues []string, outputFileName string) error {
+	if proofExist.Existence {
+		return RetrieveChunksAndVerify(chunkNames, hashValues, outputFileName)
 	}
-	defer file.Close()
-
-	// Calculate hash (you might need to choose an appropriate hashing algorithm)
-	// Here, we are using a simple checksum as an example
-	hash := calculateChecksum(file)
-	return hash, nil
-}
-
-func calculateChecksum(r io.Reader) *big.Int {
-	// Replace this with your preferred hash calculation logic
-	// For example, you can use a cryptographic hash library like SHA-256
-	// Here, we're using a simple checksum for illustration purposes
-	checksum := 0
-	buf := make([]byte, 1024)
-	for {
-		n, err := r.Read(buf)
-		if err == io.EOF {
-			break
-		}
-		for _, b := range buf[:n] {
-			checksum += int(b)
-		}
-	}
-	return big.NewInt(int64(checksum))
+	return fmt.Errorf("proof of non-membership received")
 }
