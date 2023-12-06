@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,128 +13,78 @@ import (
 	"github.com/iden3/go-merkletree-sql/db/memory"
 )
 
-func SplitFile(inputFile string, chunkSize int64) ([]string, error) {
-	file, err := os.Open(inputFile)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
+func SplitFile(inputFile *os.File, chunkSize int64) ([]int64, error) {
+	defer inputFile.Close()
 
-	fileInfo, err := file.Stat()
+	fileInfo, err := inputFile.Stat()
 	if err != nil {
 		return nil, err
 	}
 
 	fileSize := fileInfo.Size()
 
-	chunkNames := make([]string, 0)
+	chunkSizes := make([]int64, 0)
+	hasher := sha256.New()
 
 	for i := int64(0); i < fileSize; i += chunkSize {
-		remaining := fileSize - i
-		toCopy := chunkSize
-		if remaining < chunkSize {
-			toCopy = remaining
-		}
-
-		chunkName := fmt.Sprintf("%s_chunk%d", inputFile, i/chunkSize+1)
-		chunkFile, err := os.Create(chunkName)
+		chunkFile, err := os.Create(fmt.Sprintf("%v_chunk%d", inputFile, i/chunkSize+1))
 		if err != nil {
 			return nil, err
 		}
 
-		// Copy the specified toCopy bytes from the original file to the chunk file
-		_, err = io.CopyN(chunkFile, file, toCopy)
+		multiWriter := io.MultiWriter(chunkFile, hasher)
+
+		_, err = io.CopyN(multiWriter, inputFile, chunkSize)
 		if err != nil && err != io.EOF {
-			chunkFile.Close()
 			return nil, err
 		}
 
 		chunkFile.Close()
-		chunkNames = append(chunkNames, chunkName)
+		chunkSizes = append(chunkSizes, chunkSize)
+
+		hashValue := fmt.Sprintf("%x", hasher.Sum(nil))
+		newChunkName := hashValue
+		err = os.Rename(chunkFile.Name(), newChunkName)
+		if err != nil {
+			return nil, err
+		}
+		hasher.Reset()
 	}
 
-	return chunkNames, nil
+	return chunkSizes, nil
 }
 
-// Sparse MT
 func main() {
+	chunkSize := int64(500000)
+	inputFile, err := os.Open("data.jpg")
+	if err != nil {
+		fmt.Printf("Error: %v", err)
+	}
 
-	const (
-		chunkSize = int64(256000)
-		inputFile = "test.png"
-	)
-	chunkNames, err := SplitFile(inputFile, chunkSize)
+	chunkSizes, err := SplitFile(inputFile, chunkSize)
 	if err != nil {
 		fmt.Println("Error splitting and hashing file:", err)
 		return
 	}
 
 	ctx := context.Background()
-
-	// Tree storage
 	store := memory.NewMemoryStorage()
-
-	// Generate a new MerkleTree with 32 levels
 	mt, _ := merkletree.NewMerkleTree(ctx, store, 32)
 
-	for i, chunkName := range chunkNames {
-		index := big.NewInt(int64(i)) // Use the correct index based on your application
-		value, err := calculateHash(chunkName)
-		if err != nil {
-			fmt.Println("Error calculating hash for chunk:", err)
-			return
-		}
-		mt.Add(ctx, index, value)
+	for index, value := range chunkSizes {
+		mt.Add(ctx, big.NewInt(int64(index)), big.NewInt(value))
+		fmt.Println(ctx, index, value)
 
-		fmt.Println(mt)
-		fmt.Println("Root Key after adding chunk", i+1, ":", mt.Root().String())
-
+		// Proof of membership for each chunk
+		proofExist, _, _ := mt.GenerateProof(ctx, big.NewInt(int64(index)), mt.Root())
+		fmt.Printf("Proof of membership for chunk %d: %v\n", index, proofExist.Existence)
 	}
 
-	// Proof of membership of a leaf with index 1
-	proofExist, value, _ := mt.GenerateProof(ctx, big.NewInt(1), mt.Root())
+	// Proof of non-membership for a non-existing chunk (e.g., index 100)
+	nonExistingIndex := big.NewInt(100)
+	proofNotExist, _, _ := mt.GenerateProof(ctx, nonExistingIndex, mt.Root())
+	fmt.Printf("Proof of non-membership for chunk %d: %v\n", nonExistingIndex.Int64(), proofNotExist.Existence)
 
-	fmt.Println("Proof of membership:", proofExist.Existence)
-	fmt.Println("Value corresponding to the queried index:", value)
-
-	// Proof of non-membership of a leaf with index 4
-	proofNotExist, _, _ := mt.GenerateProof(ctx, big.NewInt(10), mt.Root())
-
-	fmt.Println("Proof of membership:", proofNotExist.Existence)
-
-	// transform root from bytes array to json
 	claimToMarshal, _ := json.Marshal(mt.Root())
-
 	fmt.Println(string(claimToMarshal))
-}
-
-func calculateHash(chunkName string) (*big.Int, error) {
-	file, err := os.Open(chunkName)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	// Calculate hash (you might need to choose an appropriate hashing algorithm)
-	// Here, we are using a simple checksum as an example
-	hash := calculateChecksum(file)
-	return hash, nil
-}
-
-func calculateChecksum(r io.Reader) *big.Int {
-	// Replace this with your preferred hash calculation logic
-	// For example, you can use a cryptographic hash library like SHA-256
-	// Here, we're using a simple checksum for illustration purposes
-	checksum := 0
-	buf := make([]byte, 1024)
-	for {
-		n, err := r.Read(buf)
-		if err == io.EOF {
-			break
-		}
-		for _, b := range buf[:n] {
-			checksum += int(b)
-		}
-	}
-	return big.NewInt(int64(checksum))
 }
