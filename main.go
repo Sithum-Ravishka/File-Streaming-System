@@ -15,10 +15,10 @@ import (
 
 func main() {
 	// Add chunk size
-	chunkSize := int64(500000)
+	chunkSize := int64(20000)
 
 	// File load in here
-	inputFile, err := os.Open("test.png")
+	inputFile, err := os.Open("data.jpg")
 
 	// Check if there is an error
 	if err != nil {
@@ -26,7 +26,7 @@ func main() {
 		return
 	}
 
-	// Used to close inputfile after function run complete.
+	// Used to close inputFile after function run is complete.
 	defer inputFile.Close()
 
 	// Call the file split function
@@ -65,7 +65,7 @@ func main() {
 	proofNotExist, _, _ := mt.GenerateProof(ctx, nonExistingIndex, mt.Root())
 	fmt.Printf("Proof of non-membership for chunk %d: %v\n", nonExistingIndex.Int64(), proofNotExist.Existence)
 
-	// Get root-hash in merkle tree
+	// Get root-hash in the merkle tree
 	claimToMarshal, _ := json.Marshal(mt.Root())
 	fmt.Printf("%s", claimToMarshal)
 }
