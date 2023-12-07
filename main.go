@@ -15,10 +15,10 @@ import (
 
 func main() {
 	// Add chunk size
-	chunkSize := int64(500000)
+	chunkSize := int64(20000)
 
 	// File load in here
-	inputFile, err := os.Open("test.png")
+	inputFile, err := os.Open("data.jpg")
 
 	// Check if there is an error
 	if err != nil {

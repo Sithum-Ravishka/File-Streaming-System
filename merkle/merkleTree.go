@@ -130,6 +130,7 @@ func main() {
 
 	claimToMarshal, _ := json.Marshal(mt.Root())
 	fmt.Println(string(claimToMarshal))
+
 }
 
 func newFunction(proofExist *merkletree.Proof, chunkNames []string, hashValues []string, outputFileName string) error {
