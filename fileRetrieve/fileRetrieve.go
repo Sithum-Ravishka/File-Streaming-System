@@ -9,13 +9,16 @@ import (
 
 // RetrieveChunksAndVerify retrieves and concatenates chunks to reconstruct the original file,
 // verifying the integrity of each chunk using the provided hash values.
-func RetrieveChunksAndVerify(chunkNames, hashValues []string, outputFileName string) error {
+func RetrieveChunksAndVerify(chunkNames []string, hashValues []string, outputFileName string) error {
 	outputFile, err := os.Create(outputFileName)
+
+	// Error handle
 	if err != nil {
 		return err
 	}
 	defer outputFile.Close()
 
+	// Use SHA-256 as the hashing algorithum
 	hasher := sha256.New()
 
 	for i, chunkName := range chunkNames {

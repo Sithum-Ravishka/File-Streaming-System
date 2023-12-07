@@ -1,51 +1,61 @@
 package fileSplit
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
 )
 
-// SplitFile splits a file into chunks and returns the names of the created chunks.
-func SplitFile(inputFile string, chunkSize int64) ([]string, error) {
-	file, err := os.Open(inputFile)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
+// File chunks of a specified size
+func SplitFile(inputFile *os.File, chunkSize int64) ([]string, []string, error) {
+	defer inputFile.Close()
 
-	fileInfo, err := file.Stat()
+	fileInfo, err := inputFile.Stat()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
+	// Get file size
 	fileSize := fileInfo.Size()
+	var chunkNames []string
+	var hashValues []string
 
-	chunkNames := make([]string, 0)
+	// Use SHA-256 as the hashing algorithum
+	hasher := sha256.New()
 
+	// Get the index and the chunknames from "chunkNames" slice
 	for i := int64(0); i < fileSize; i += chunkSize {
-		remaining := fileSize - i
-		toCopy := chunkSize
-		if remaining < chunkSize {
-			toCopy = remaining
-		}
-
-		chunkName := fmt.Sprintf("%s_chunk%d", inputFile, i/chunkSize+1)
-		chunkFile, err := os.Create(chunkName)
+		chunkFile, err := os.Create(fmt.Sprintf("%v_chunk%d", inputFile.Name(), i/chunkSize+1))
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
-		// Copy the specified toCopy bytes from the original file to the chunk file
-		_, err = io.CopyN(chunkFile, file, toCopy)
+		multiWriter := io.MultiWriter(chunkFile, hasher)
+
+		_, err = io.CopyN(multiWriter, inputFile, chunkSize)
 		if err != nil && err != io.EOF {
-			chunkFile.Close()
-			return nil, err
+			return nil, nil, err
 		}
 
 		chunkFile.Close()
-		chunkNames = append(chunkNames, chunkName)
+
+		// Calculate hash value
+		hashValue := fmt.Sprintf("%x", hasher.Sum(nil))
+		hashedFileName := fmt.Sprintf("%s", hashValue)
+
+		// Rename the chunk file with its hash value
+		err = os.Rename(chunkFile.Name(), hashedFileName)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		chunkNames = append(chunkNames, hashedFileName)
+		hashValues = append(hashValues, hashValue)
+
+		// Reset the hash for the next iteration
+		hasher.Reset()
 	}
 
-	return chunkNames, nil
+	return chunkNames, hashValues, nil
 }
