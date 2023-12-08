@@ -15,7 +15,7 @@ import (
 
 func main() {
 	// Add chunk size
-	chunkSize := int64(20000)
+	chunkSize := int64(1900000)
 
 	// File load in here
 	inputFile, err := os.Open("data.jpg")
