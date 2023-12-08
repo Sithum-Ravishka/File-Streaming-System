@@ -54,12 +54,14 @@ func SplitFile(inputFile *os.File, chunkSize int64) ([]string, []string, error) 
 
 		// Rename the chunk file with its hash value
 		err = os.Rename(chunkFile.Name(), hashedFileName)
+
 		if err != nil {
 			return nil, nil, err
 		}
 
 		// Append the hashed file name and hash value to the respective slices
 		chunkNames = append(chunkNames, hashedFileName)
+
 		hashValues = append(hashValues, hashValue)
 
 		// Reset the hash for the next iteration
