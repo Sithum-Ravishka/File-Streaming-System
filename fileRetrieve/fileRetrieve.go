@@ -49,5 +49,9 @@ func RetrieveChunksAndVerify(chunkNames []string, hashValues []string, outputFil
 		hasher.Reset()
 	}
 
+	// add some specfic attribute for chunk file form user-A
+	// after add chunk merkle tree
+	// In chunk file retrieve proof with user for retrieve
+
 	return nil
 }

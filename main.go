@@ -53,9 +53,15 @@ func main() {
 		proofExist, _, _ := mt.GenerateProof(ctx, big.NewInt(int64(index)), mt.Root())
 		fmt.Printf("Proof of membership for chunk %d: %v\n", index, proofExist.Existence)
 
-		err := newFunction(proofExist, chunkNames, hashValues, "restored_data.jpg")
-		if err != nil {
-			fmt.Println("Error retrieving and verifying chunks:", err)
+		user := "B"
+		if user == "A" {
+			err := newFunction(proofExist, chunkNames, hashValues, "restored_data.jpg")
+			if err != nil {
+				fmt.Println("Error retrieving and verifying chunks:", err)
+				return
+			}
+		} else {
+			fmt.Println("Invalid User Authentication")
 			return
 		}
 	}
@@ -77,3 +83,13 @@ func newFunction(proofExist *merkletree.Proof, chunkNames []string, hashValues [
 	}
 	return fmt.Errorf("proof of non-membership received")
 }
+
+// func userFunction(user, chunkNames []string, hashValues []string, outputFileName string) error {
+// 	// Check file proof with chunk file data for retrieve
+// 	user = "A"
+
+// 	if user == "A" {
+// 		return fileRetrieve.RetrieveChunksAndVerify(chunkNames, hashValues, outputFileName)
+// 	}
+// 	return fmt.Errorf("proof of non-membership received")
+// }
