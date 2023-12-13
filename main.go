@@ -30,9 +30,9 @@ func main() {
 	defer inputFile.Close()
 
 	// Call the file split function
-	chunkNames, hashValues, err := fileSplit.SplitFile(inputFile, chunkSize)
+	chunkNames, err := fileSplit.SplitFile(inputFile, chunkSize)
 	if err != nil {
-		fmt.Println("Error splitting and hashing file:", err)
+		fmt.Println("Error splitting file:", err)
 		return
 	}
 
@@ -40,11 +40,11 @@ func main() {
 	store := memory.NewMemoryStorage()
 	mt, _ := merkletree.NewMerkleTree(ctx, store, 32)
 
-	// Get index and value of from the ChunkNames slice
+	// Get index and value from the ChunkNames slice
 	// Add to the merkle tree to chunk file
 	for index, value := range chunkNames {
 		mt.Add(ctx, big.NewInt(int64(index)), big.NewInt(0)) // Need to adjust the second parameter based on our use case need
-		fmt.Println(ctx, index, value)
+		fmt.Println(index, value)
 
 		// Print the merkle root
 		fmt.Println(mt.Root())
@@ -53,9 +53,9 @@ func main() {
 		proofExist, _, _ := mt.GenerateProof(ctx, big.NewInt(int64(index)), mt.Root())
 		fmt.Printf("Proof of membership for chunk %d: %v\n", index, proofExist.Existence)
 
-		user := "B"
+		user := "A" // Assuming this is the correct user
 		if user == "A" {
-			err := newFunction(proofExist, chunkNames, hashValues, "restored_data.jpg")
+			err := newFunction(proofExist, chunkNames, "restored_data.jpg")
 			if err != nil {
 				fmt.Println("Error retrieving and verifying chunks:", err)
 				return
@@ -76,20 +76,10 @@ func main() {
 	fmt.Printf("%s", claimToMarshal)
 }
 
-func newFunction(proofExist *merkletree.Proof, chunkNames []string, hashValues []string, outputFileName string) error {
+func newFunction(proofExist *merkletree.Proof, chunkNames []string, outputFileName string) error {
 	// Check file proof with chunk file data for retrieve
 	if proofExist.Existence {
-		return fileRetrieve.RetrieveChunksAndVerify(chunkNames, hashValues, outputFileName)
+		return fileRetrieve.RetrieveChunksAndVerify(chunkNames, nil, outputFileName)
 	}
 	return fmt.Errorf("proof of non-membership received")
 }
-
-// func userFunction(user, chunkNames []string, hashValues []string, outputFileName string) error {
-// 	// Check file proof with chunk file data for retrieve
-// 	user = "A"
-
-// 	if user == "A" {
-// 		return fileRetrieve.RetrieveChunksAndVerify(chunkNames, hashValues, outputFileName)
-// 	}
-// 	return fmt.Errorf("proof of non-membership received")
-// }
