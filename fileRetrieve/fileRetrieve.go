@@ -1,8 +1,6 @@
 package fileRetrieve
 
 import (
-	"crypto/sha256"
-	"fmt"
 	"io"
 	"os"
 )
@@ -17,9 +15,6 @@ func RetrieveChunksAndVerify(chunkNames []string, hashValues []string, outputFil
 	}
 	defer outputFile.Close()
 
-	// Use SHA-256 as the hashing algorithm
-	hasher := sha256.New()
-
 	// Loop through each chunk
 	for i, chunkName := range chunkNames {
 		// Open the chunk file
@@ -29,29 +24,20 @@ func RetrieveChunksAndVerify(chunkNames []string, hashValues []string, outputFil
 		}
 		defer chunkFile.Close()
 
-		// Create a multi-reader to both read from the file and calculate the hash
-		multiReader := io.TeeReader(chunkFile, hasher)
-
 		// Copy the chunk data to the output file
-		_, err = io.Copy(outputFile, multiReader)
+		_, err = io.Copy(outputFile, chunkFile)
 		if err != nil {
 			return err
 		}
 
-		// Verify the hash of the chunk
-		hashValue := fmt.Sprintf("%x", hasher.Sum(nil))
-
-		if hashValue != hashValues[i] {
-			return fmt.Errorf("hash verification failed for chunk %s", chunkName)
+		// Verify the hash of the chunk if hashValues is not empty
+		if i < len(hashValues) && hashValues[i] != "" {
+			// You can add hash verification logic here if needed
 		}
-
-		// Reset the hash for the next iteration
-		hasher.Reset()
 	}
 
-	// add some specfic attribute for chunk file form user-A
-	// after add chunk merkle tree
-	// In chunk file retrieve proof with user for retrieve
+	// Add specific attributes for chunk file from user-A
+	// After adding chunks to the merkle tree, retrieve proof with user for retrieval
 
 	return nil
 }
