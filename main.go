@@ -15,7 +15,7 @@ import (
 
 func main() {
 	// Add chunk size
-	chunkSize := int64(1900000)
+	chunkSize := int64(100000)
 
 	// File load in here
 	inputFile, err := os.Open("data.jpg")
@@ -29,8 +29,11 @@ func main() {
 	// Used to close inputFile after function run is complete.
 	defer inputFile.Close()
 
-	// Call the file split function
-	chunkNames, err := fileSplit.SplitFile(inputFile, chunkSize)
+	// Specify the directory where you want to store the chunks
+	outputDirectory := "./splitfile"
+
+	// Call the file split function with the specified output directory
+	chunkNames, err := fileSplit.SplitFile(inputFile, chunkSize, outputDirectory)
 	if err != nil {
 		fmt.Println("Error splitting file:", err)
 		return
@@ -79,7 +82,7 @@ func main() {
 func newFunction(proofExist *merkletree.Proof, chunkNames []string, outputFileName string) error {
 	// Check file proof with chunk file data for retrieve
 	if proofExist.Existence {
-		return fileRetrieve.RetrieveChunksAndVerify(chunkNames, nil, outputFileName)
+		return fileRetrieve.RetrieveChunksAndVerify(chunkNames, outputFileName)
 	}
 	return fmt.Errorf("proof of non-membership received")
 }

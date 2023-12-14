@@ -7,7 +7,7 @@ import (
 
 // RetrieveChunksAndVerify retrieves and concatenates chunks to reconstruct the original file,
 // verifying the integrity of each chunk using the provided hash values.
-func RetrieveChunksAndVerify(chunkNames []string, hashValues []string, outputFileName string) error {
+func RetrieveChunksAndVerify(chunkNames []string, outputFileName string) error {
 	// Create the output file
 	outputFile, err := os.Create(outputFileName)
 	if err != nil {
@@ -16,7 +16,7 @@ func RetrieveChunksAndVerify(chunkNames []string, hashValues []string, outputFil
 	defer outputFile.Close()
 
 	// Loop through each chunk
-	for i, chunkName := range chunkNames {
+	for _, chunkName := range chunkNames {
 		// Open the chunk file
 		chunkFile, err := os.Open(chunkName)
 		if err != nil {
@@ -30,10 +30,6 @@ func RetrieveChunksAndVerify(chunkNames []string, hashValues []string, outputFil
 			return err
 		}
 
-		// Verify the hash of the chunk if hashValues is not empty
-		if i < len(hashValues) && hashValues[i] != "" {
-			// You can add hash verification logic here if needed
-		}
 	}
 
 	// Add specific attributes for chunk file from user-A
