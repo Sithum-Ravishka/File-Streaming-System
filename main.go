@@ -51,6 +51,7 @@ func main() {
 	}
 }
 
+// startServer function to handle incoming connections
 func startServer(port string) {
 	listener, err := net.Listen("tcp", port)
 	if err != nil {
@@ -100,31 +101,41 @@ func handleConnection(conn net.Conn) {
 
 // Modify connectToPeer function to send chunks using the fileSplit package
 func connectToPeer(target string, userID string) {
-	conn, err := net.Dial("tcp", target)
-	if err != nil {
-		fmt.Println("Error connecting to peer:", err)
-		return
-	}
-	defer conn.Close()
-
-	fmt.Println("Connected to peer at", target)
+	go startServer(DefaultServerPort) // Start server in a goroutine
 
 	for {
-		fmt.Println("Enter file name to send or type 'retrieve' to retrieve a file:")
-		command, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		conn, err := net.Dial("tcp", target)
 		if err != nil {
-			fmt.Println("Error reading command:", err)
-			return
+			fmt.Println("Error connecting to peer:", err)
+			fmt.Println("Retrying in 5 seconds...")
+			time.Sleep(5 * time.Second)
+			continue
 		}
 
-		command = strings.TrimSpace(command)
+		fmt.Println("Connected to peer at", target)
 
-		switch command {
-		case "retrieve":
-			handleFileRetrieve(conn, userID)
-		default:
-			handleFileSend(conn, command, userID)
+		for {
+			fmt.Println("Enter file name to send or type 'retrieve' to retrieve a file:")
+			command, err := bufio.NewReader(os.Stdin).ReadString('\n')
+			if err != nil {
+				fmt.Println("Error reading command:", err)
+				break
+			}
+
+			command = strings.TrimSpace(command)
+
+			switch command {
+			case "retrieve":
+				handleFileRetrieve(conn, userID)
+			default:
+				handleFileSend(conn, command, userID)
+			}
 		}
+
+		// If the connection is lost, retry after a delay
+		fmt.Println("Connection lost. Retrying in 5 seconds...")
+		conn.Close()
+		time.Sleep(5 * time.Second)
 	}
 }
 
