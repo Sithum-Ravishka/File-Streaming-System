@@ -7,8 +7,8 @@ import (
 )
 
 // SplitFile splits a given file into chunks of a specified size and returns
-// the names of the generated chunks.
-func SplitFile(inputFile *os.File, chunkSize int64) ([]string, error) {
+// the names of the generated chunks. Chunks are stored in the specified directory.
+func SplitFile(inputFile *os.File, chunkSize int64, outputDirectory string) ([]string, error) {
 	// Ensure the input file is closed when the function completes
 	defer inputFile.Close()
 
@@ -24,8 +24,9 @@ func SplitFile(inputFile *os.File, chunkSize int64) ([]string, error) {
 
 	// Loop through the file, creating chunks of the specified size
 	for i := int64(0); i < fileSize; i += chunkSize {
-		// Create a new chunk file with a name based on the index
-		chunkFile, err := os.Create(fmt.Sprintf("%v_chunk%d", inputFile.Name(), i/chunkSize+1))
+		// Create a new chunk file with a name based on the index in the specified directory
+		chunkFilePath := fmt.Sprintf("%s/chunk%d", outputDirectory, i/chunkSize+1)
+		chunkFile, err := os.Create(chunkFilePath)
 		if err != nil {
 			return nil, err
 		}
@@ -39,8 +40,8 @@ func SplitFile(inputFile *os.File, chunkSize int64) ([]string, error) {
 		// Close the chunk file
 		chunkFile.Close()
 
-		// Append the chunk file name to the slice
-		chunkNames = append(chunkNames, chunkFile.Name())
+		// Append the chunk file path to the slice
+		chunkNames = append(chunkNames, chunkFilePath)
 	}
 
 	// Return the names of the generated chunks
