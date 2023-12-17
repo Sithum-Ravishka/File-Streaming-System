@@ -7,7 +7,7 @@ import (
 
 // RetrieveChunksAndVerify retrieves and concatenates chunks to reconstruct the original file,
 // verifying the integrity of each chunk using the provided hash values.
-func RetrieveChunksAndVerify(chunkNames []string, outputFileName string) error {
+func RetrieveChunks(chunkNames []string, outputFileName string) error {
 	// Create the output file
 	outputFile, err := os.Create(outputFileName)
 	if err != nil {
