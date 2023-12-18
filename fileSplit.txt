@@ -1,0 +1,71 @@
+package main
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+)
+
+func RetrieveChunksAndVerify(directory string, outputFileName string) error {
+	files, err := filepath.Glob(filepath.Join(directory, "chunk*"))
+	if err != nil {
+		return err
+	}
+
+	var chunkNames []string
+
+	for _, file := range files {
+		chunkNames = append(chunkNames, file)
+
+		chunkFile, err := os.Open(file)
+		if err != nil {
+			return err
+		}
+		defer chunkFile.Close()
+
+		// Verify the hash of the chunk while copying to the output file
+		_, err = io.Copy(io.MultiWriter(os.Stdout), chunkFile)
+		if err != nil {
+			return err
+		}
+
+	}
+
+	outputFile, err := os.Create(outputFileName)
+	if err != nil {
+		return err
+	}
+	defer outputFile.Close()
+
+	for _, chunkName := range chunkNames {
+		chunkFile, err := os.Open(chunkName)
+		if err != nil {
+			return err
+		}
+		defer chunkFile.Close()
+
+		_, err = io.Copy(outputFile, chunkFile)
+		if err != nil {
+			return err
+		}
+
+		// Verify the hash of the chunk
+
+	}
+
+	return nil
+}
+
+func main() {
+	// Replace this value with the actual directory where chunks are stored
+	chunkDirectory := "./1702873419518720200"
+
+	outputFileName := "restored_date.jpg"
+
+	err := RetrieveChunksAndVerify(chunkDirectory, outputFileName)
+	if err != nil {
+		fmt.Println("Error retrieving and verifying chunks:", err)
+		return
+	}
+}
