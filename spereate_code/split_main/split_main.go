@@ -1,67 +1,75 @@
 package main
 
 import (
-	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 )
 
-func SplitFile(inputFile *os.File, chunkSize int64) ([]string, []string, error) {
-	defer inputFile.Close()
-
-	fileInfo, err := inputFile.Stat()
+func RetrieveChunks(directory string, outputFileName string) error {
+	// Step 1: Gather chunk file names
+	files, err := filepath.Glob(filepath.Join(directory, "chunk*"))
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
 
-	fileSize := fileInfo.Size()
+	// Step 2: Create a slice to store chunk file names
 	var chunkNames []string
-	var hashValues []string
 
-	hasher := sha256.New()
+	// Step 3: Iterate through chunk files, copy to the output file, and verify the hash
+	for _, file := range files {
+		chunkNames = append(chunkNames, file)
 
-	for i := int64(0); i < fileSize; i += chunkSize {
-		chunkFile, err := os.Create(fmt.Sprintf("%v_chunk%d", inputFile.Name(), i/chunkSize+1))
+		chunkFile, err := os.Open(file)
 		if err != nil {
-			return nil, nil, err
+			return err
 		}
+		defer chunkFile.Close()
 
-		multiWriter := io.MultiWriter(chunkFile, hasher)
-
-		_, err = io.CopyN(multiWriter, inputFile, chunkSize)
-		if err != nil && err != io.EOF {
-			return nil, nil, err
+		// Verify the hash of the chunk while copying to the output file
+		_, err = io.Copy(io.MultiWriter(os.Stdout), chunkFile)
+		if err != nil {
+			return err
 		}
-
-		chunkFile.Close()
-		chunkNames = append(chunkNames, chunkFile.Name())
-
-		hashValue := fmt.Sprintf("%x", hasher.Sum(nil))
-		hashValues = append(hashValues, hashValue)
-
-		hasher.Reset()
 	}
 
-	return chunkNames, hashValues, nil
+	// Step 4: Create the output file
+	outputFile, err := os.Create(outputFileName)
+	if err != nil {
+		return err
+	}
+	defer outputFile.Close()
+
+	// Step 5: Iterate through chunk files again and copy to the output file
+	for _, chunkName := range chunkNames {
+		chunkFile, err := os.Open(chunkName)
+		if err != nil {
+			return err
+		}
+		defer chunkFile.Close()
+
+		_, err = io.Copy(outputFile, chunkFile)
+		if err != nil {
+			return err
+		}
+
+		// Verify the hash of the chunk
+		// Add your hash verification code here
+	}
+
+	return nil
 }
 
 func main() {
-	chunkSize := int64(500000)
-	inputFile, err := os.Open("data.jpg")
+	// Replace this value with the actual directory where chunks are stored
+	chunkDirectory := "./splitfile"
+
+	outputFileName := "restored.jpg"
+
+	err := RetrieveChunks(chunkDirectory, outputFileName)
 	if err != nil {
-		fmt.Printf("Error: %v", err)
+		fmt.Println("Error retrieving and verifying chunks:", err)
 		return
 	}
-	defer inputFile.Close()
-
-	chunkNames, hashValues, err := SplitFile(inputFile, chunkSize)
-	if err != nil {
-		fmt.Println("Error splitting and hashing file:", err)
-		return
-	}
-
-	// Print chunk names and hash values
-	fmt.Println("Chunk Names:", chunkNames)
-	fmt.Println("Hash Values:", hashValues)
 }

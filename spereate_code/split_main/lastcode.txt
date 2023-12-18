@@ -9,12 +9,10 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"sort"
-	"strconv"
 	"strings"
 	"time"
 
-	merkletree "github.com/iden3/go-merkletree-sql"
+	"github.com/iden3/go-merkletree-sql"
 	"github.com/iden3/go-merkletree-sql/db/memory"
 )
 
@@ -31,7 +29,6 @@ func main() {
 		fmt.Println("Modes:")
 		fmt.Println("  server: Start as a server")
 		fmt.Println("  client: Start as a client")
-		fmt.Println("  retrieve: Run the file retrieval process")
 		return
 	}
 
@@ -50,18 +47,8 @@ func main() {
 			target = os.Args[2]
 		}
 		connectToPeer(target, generateUserID())
-	case "retrieve":
-		// Replace this value with the actual directory where chunks are stored
-		chunkDirectory := "./1702883516767017500"
-		outputFileName := "reconstructed.png"
-
-		err := RetrieveChunks(chunkDirectory, outputFileName)
-		if err != nil {
-			fmt.Println("Error reconstructing file:", err)
-			return
-		}
 	default:
-		fmt.Println("Invalid mode. Use 'server', 'client', or 'retrieve'.")
+		fmt.Println("Invalid mode. Use 'server' or 'client'.")
 	}
 }
 
@@ -106,7 +93,7 @@ func handleConnection(conn net.Conn) {
 
 		switch command {
 		case "retrieve":
-
+			handleFileRetrieve(conn, userID)
 		default:
 			handleFileSend(conn, command, userID)
 		}
@@ -140,16 +127,7 @@ func connectToPeer(target string, userID string) {
 
 			switch command {
 			case "retrieve":
-
-				// Replace this value with the actual directory where chunks are stored
-				chunkDirectory := "./1702883516767017500"
-				outputFileName := "reconstructed.png"
-
-				err := RetrieveChunks(chunkDirectory, outputFileName)
-				if err != nil {
-					fmt.Println("Error reconstructing file:", err)
-					return
-				}
+				handleFileRetrieve(conn, userID)
 			default:
 				handleFileSend(conn, command, userID)
 			}
@@ -162,7 +140,6 @@ func connectToPeer(target string, userID string) {
 	}
 }
 
-// Modify handleFileSend function to split the file into chunks of 128 KB and send them
 func handleFileSend(conn net.Conn, fileName, userID string) {
 	fmt.Println("File transfer initiated. Sending file:", fileName)
 
@@ -180,9 +157,6 @@ func handleFileSend(conn net.Conn, fileName, userID string) {
 	}
 	defer file.Close()
 
-	// Ensure the input file is closed when the function completes
-	defer file.Close()
-
 	// Retrieve information about the input file
 	fileInfo, err := file.Stat()
 	if err != nil {
@@ -195,16 +169,21 @@ func handleFileSend(conn net.Conn, fileName, userID string) {
 
 	// Create Merkle Tree storage
 	store := memory.NewMemoryStorage()
-	mt, _ := merkletree.NewMerkleTree(context.Background(), store, 32)
+	mt, _ := merkletree.NewMerkleTree(context.Background(), store, 60)
 
 	// Send the protocol and userID to the peer
 	conn.Write([]byte(ProtocolSendFile + "\n"))
 	conn.Write([]byte(userID + "\n"))
 
-	// Buffer to read and send chunks
-	buffer := make([]byte, 1024)
+	// Send file name and size
+	conn.Write([]byte(fileName + "\n"))
+	conn.Write([]byte(fmt.Sprintf("%d\n", fileSize)))
 
-	for i := int64(0); i < fileSize; i += 1024 {
+	// Read and send chunks directly without using buffer
+	chunkSize := int64(98745)
+	buffer := make([]byte, chunkSize)
+
+	for i := int64(0); i < fileSize; i += int64(chunkSize) {
 		// Read a chunk from the file
 		n, err := file.Read(buffer)
 		if err == io.EOF {
@@ -215,7 +194,7 @@ func handleFileSend(conn net.Conn, fileName, userID string) {
 		}
 
 		// Create a new chunk file with a name based on the index in the specified directory
-		chunkFilePath := fmt.Sprintf("%s/chunk%d", userFolder, i/(1024)+1)
+		chunkFilePath := fmt.Sprintf("%s/chunk%d", userFolder, i/int64(chunkSize)+1)
 		chunkFile, err := os.Create(chunkFilePath)
 		if err != nil {
 			fmt.Println("Error creating chunk file:", err)
@@ -231,11 +210,12 @@ func handleFileSend(conn net.Conn, fileName, userID string) {
 		}
 
 		// Add the chunk file to the Merkle Tree
-		index := big.NewInt(i / (128 * 1024))
+		index := big.NewInt(i / int64(chunkSize))
 		mt.Add(context.Background(), index, hash(chunkFile))
 
-		// Send the chunk name to the peer
+		// Send the chunk name and actual chunk size to the peer
 		conn.Write([]byte(chunkFilePath + "\n"))
+		conn.Write([]byte(fmt.Sprintf("%d\n", n)))
 
 		// Open the chunk file for reading
 		chunkFile, err = os.Open(chunkFilePath)
@@ -246,15 +226,12 @@ func handleFileSend(conn net.Conn, fileName, userID string) {
 		defer chunkFile.Close()
 
 		// Send the chunk to the peer
-		io.Copy(conn, chunkFile)
+		io.CopyN(conn, chunkFile, int64(n))
 
 		fmt.Println("Chunk sent successfully:", chunkFilePath)
-		fmt.Printf("merkle chunk hash%s\n", mt.Root().Hex())
+		fmt.Printf("merkle chunk : %s\n", mt.Root().Hex())
 	}
 
-	// Send the Merkle Root to the peer
-	conn.Write([]byte("MerkleRoot:\n" + mt.Root().String() + "\n"))
-	fmt.Printf("merkle root:%s\n", mt.Root().Hex())
 	fmt.Println("File sent successfully.")
 }
 
@@ -268,23 +245,152 @@ func hash(file *os.File) *big.Int {
 	return hash
 }
 
-func generateUserID() string {
-	return fmt.Sprintf("%d", time.Now().UnixNano())
+// Modify handleFileRetrieve function to use the file retrieval code without Merkle tree
+func handleFileRetrieve(conn net.Conn, userID string) {
+	fmt.Println("File retrieval initiated. Waiting for file name...")
+
+	// Receive the protocol and userID from the peer
+	protocol, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil {
+		fmt.Println("Error reading protocol:", err)
+		return
+	}
+	protocol = strings.TrimSpace(protocol)
+
+	if protocol != ProtocolSendFile {
+		fmt.Println("Invalid protocol. Expected SEND_FILE.")
+		return
+	}
+
+	senderUserID, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil {
+		fmt.Println("Error reading sender UserID:", err)
+		return
+	}
+	senderUserID = strings.TrimSpace(senderUserID)
+
+	// Ensure the folder for the user exists
+	userFolder := fmt.Sprintf("%s", userID)
+	if _, err := os.Stat(userFolder); os.IsNotExist(err) {
+		os.Mkdir(userFolder, os.ModeDir)
+	}
+
+	// Receive file name and size
+	fileName, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil {
+		fmt.Println("Error reading file name:", err)
+		return
+	}
+	fileName = strings.TrimSpace(fileName)
+
+	fileSizeStr, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil {
+		fmt.Println("Error reading file size:", err)
+		return
+	}
+	fileSizeStr = strings.TrimSpace(fileSizeStr)
+
+	_, err = bufio.NewReader(conn).ReadString('\n') // Read and discard file size
+	if err != nil {
+		fmt.Println("Error reading file size:", err)
+		return
+	}
+
+	// Receive chunks and reconstruct the file
+	chunkDirectory := fmt.Sprintf("%s", userID)
+	outputFileName := fileName
+
+	// Use the provided RetrieveChunks function to reconstruct the file
+	err = RetrieveChunks(chunkDirectory, outputFileName)
+	if err != nil {
+		fmt.Println("Error retrieving and verifying chunks:", err)
+		return
+	}
+
+	fmt.Println("File retrieval completed.")
 }
 
-// RetrieveChunks reconstructs the file from the chunks in the specified directory
+// Function to retrieve data and save it as a file
+func retrieveData(userID, fileName string) {
+	// Open the file for writing
+	file, err := os.Create(fmt.Sprintf("%s/%s", userID, fileName))
+	if err != nil {
+		fmt.Println("Error creating data file:", err)
+		return
+	}
+	defer file.Close()
+
+	// Read each chunk file and write its content to the data file
+	for i := 1; ; i++ {
+		chunkFilePath := fmt.Sprintf("%s/chunk%d", userID, i)
+		chunkFile, err := os.Open(chunkFilePath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				// No more chunks
+				break
+			}
+			fmt.Println("Error opening chunk file:", err)
+			return
+		}
+		defer chunkFile.Close()
+
+		// Copy the content of the chunk file to the data file
+		_, err = io.Copy(file, chunkFile)
+		if err != nil {
+			fmt.Println("Error writing chunk to data file:", err)
+			return
+		}
+	}
+
+	fmt.Printf("Data retrieved and saved as: %s/%s\n", userID, fileName)
+}
+
+// Function to receive a chunk and save it to a file
+func receiveChunkAndSave(conn net.Conn, filePath string) {
+	// Open the file for writing
+	file, err := os.Create(filePath)
+	if err != nil {
+		fmt.Println("Error creating chunk file:", err)
+		return
+	}
+	defer file.Close()
+
+	// Receive and write the chunk data to the file
+	_, err = io.Copy(file, conn)
+	if err != nil {
+		fmt.Println("Error receiving chunk:", err)
+		return
+	}
+
+	fmt.Println("Chunk received successfully:", filePath)
+}
+
+// ... (Other functions remain unchanged)
+
+// Provided file retrieval code
 func RetrieveChunks(directory string, outputFileName string) error {
 	files, err := filepath.Glob(filepath.Join(directory, "chunk*"))
 	if err != nil {
 		return err
 	}
 
-	// Sort chunk files based on their index in the file name
-	sort.Slice(files, func(i, j int) bool {
-		indexI, _ := strconv.Atoi(strings.TrimPrefix(filepath.Base(files[i]), "chunk"))
-		indexJ, _ := strconv.Atoi(strings.TrimPrefix(filepath.Base(files[j]), "chunk"))
-		return indexI < indexJ
-	})
+	var chunkNames []string
+
+	for _, file := range files {
+		chunkNames = append(chunkNames, file)
+
+		chunkFile, err := os.Open(file)
+		if err != nil {
+			return err
+		}
+		defer chunkFile.Close()
+
+		// Verify the hash of the chunk while copying to the output file
+		_, err = io.Copy(io.MultiWriter(os.Stdout), chunkFile)
+		if err != nil {
+			return err
+		}
+	}
 
 	outputFile, err := os.Create(outputFileName)
 	if err != nil {
@@ -292,19 +398,22 @@ func RetrieveChunks(directory string, outputFileName string) error {
 	}
 	defer outputFile.Close()
 
-	for _, chunkFile := range files {
-		chunk, err := os.Open(chunkFile)
+	for _, chunkName := range chunkNames {
+		chunkFile, err := os.Open(chunkName)
 		if err != nil {
 			return err
 		}
-		defer chunk.Close()
+		defer chunkFile.Close()
 
-		_, err = io.Copy(outputFile, chunk)
+		_, err = io.Copy(outputFile, chunkFile)
 		if err != nil {
 			return err
 		}
 	}
 
-	fmt.Println("File reconstructed successfully:", outputFileName)
 	return nil
+}
+
+func generateUserID() string {
+	return fmt.Sprintf("%d", time.Now().UnixNano())
 }

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 )
 
-func RetrieveChunksAndVerify(directory string, outputFileName string) error {
+func RetrieveChunks(directory string, outputFileName string) error {
 	files, err := filepath.Glob(filepath.Join(directory, "chunk*"))
 	if err != nil {
 		return err
@@ -24,7 +24,7 @@ func RetrieveChunksAndVerify(directory string, outputFileName string) error {
 		}
 		defer chunkFile.Close()
 
-		// Verify the hash of the chunk while copying to the output file
+	
 		_, err = io.Copy(io.MultiWriter(os.Stdout), chunkFile)
 		if err != nil {
 			return err
@@ -50,7 +50,6 @@ func RetrieveChunksAndVerify(directory string, outputFileName string) error {
 			return err
 		}
 
-		// Verify the hash of the chunk
 
 	}
 
@@ -59,13 +58,13 @@ func RetrieveChunksAndVerify(directory string, outputFileName string) error {
 
 func main() {
 	// Replace this value with the actual directory where chunks are stored
-	chunkDirectory := "./1702873419518720200"
+	chunkDirectory := "./1702877508846996400"
 
-	outputFileName := "restored_date.jpg"
+	outputFileName := "re.jpg"
 
-	err := RetrieveChunksAndVerify(chunkDirectory, outputFileName)
+	err := RetrieveChunks(chunkDirectory, outputFileName)
 	if err != nil {
-		fmt.Println("Error retrieving and verifying chunks:", err)
+		fmt.Println("Error retrieving chunks:", err)
 		return
 	}
 }
